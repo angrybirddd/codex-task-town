@@ -1,0 +1,11 @@
+node_modules/
+.DS_Store
+.env
+.env.*
+coverage/
+*.log
+.codex/
+.codex-task-town/
+playwright-report/
+test-results/
+__pycache__/

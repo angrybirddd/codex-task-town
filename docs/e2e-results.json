@@ -1,0 +1,12 @@
+{
+  "version": "0.3.0",
+  "date": "2026-09-14",
+  "command": "CHROMIUM_PATH=/usr/bin/chromium python3 test/e2e.py",
+  "status": "blocked_not_passed",
+  "stage": "page.goto (normal localhost navigation)",
+  "error": "net::ERR_BLOCKED_BY_ADMINISTRATOR",
+  "transport_mocked": false,
+  "installed_recorder_command_tested_in_node_suite": true,
+  "real_browser_server_e2e_passed": false,
+  "real_desktop_hooks_tested": false
+}

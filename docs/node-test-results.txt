@@ -1,0 +1,15 @@
+Codex Task Town v0.3.0 — local execution, 2026-09-14
+Node v22.16.0 / Linux
+Command: npm test
+1..85
+# tests 85
+# suites 0
+# pass 85
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7519.64187
+
+Baseline: 50/50 passed. Initial new regressions on the old implementation: 18 failed / 19.
+Not a claim about GitHub Actions or real Codex Desktop.
