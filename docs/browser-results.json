@@ -1,0 +1,21 @@
+{
+  "browser": "Chromium",
+  "fixture": "in-memory UI, mocked streaming fetch",
+  "desktop": "1440x1100",
+  "mobile": "390x844",
+  "console_errors": [],
+  "mobile_no_page_overflow": true,
+  "checks": [
+    "filters retain positions",
+    "search",
+    "modal keyboard close",
+    "nickname XSS escaping",
+    "paused canvas stable",
+    "viewer header not URL",
+    "streamed snapshot",
+    "20-resident pagination",
+    "mobile resident list"
+  ],
+  "real_browser_server_e2e": false,
+  "real_desktop_hooks_tested": false
+}

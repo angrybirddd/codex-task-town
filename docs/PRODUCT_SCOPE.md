@@ -1,13 +1,15 @@
-# Product scope
+# 产品范围
 
-## Phase 1: shared studio — task activity
+## 第一阶段：共享工作室——任务工作状态
 
-Build a warm shared pixel-art studio showing the work state of each Codex Desktop task. Use window benches, shared work surfaces, bookshelves, a whiteboard and a lounge instead of repeating identical desks. Each task keeps a stable character. Tool events update activities; browser code handles animation without extra model calls.
+以温暖的共享像素工作室为主场景：窗边长台、共享桌、书架、白板、测试区、沙发与咖啡角。每个任务具有稳定角色，状态由普通程序采集，动画由浏览器驱动；不让模型控制人物，不增加额外模型调用。
 
-Reliability takes priority: waiting is not resting; a stopped turn is not project completion; absent telemetry means unknown, not idle. Keep raw prompts, tool output and secrets out of the dashboard. The monitoring integration is read-only and must not approve or block task execution.
+状态真实性优先于热闹：等待不等于休息、回合收尾不等于整个需求完成、没有数据不等于空闲。只读，不保存原始对话，不替用户审批或改变任务执行。
 
-## Phase 2: campsite — project progress (deferred)
+阶段完成的条件：主要生命周期在用户实际 Codex Desktop 版本上验证通过；并行、审批、中断与失联不会误报；桌面与手机页面可用。当前本地与网页模拟测试通过，但用户的 Mac 联调尚未进行，不能宣布第一阶段完全结束。
 
-Only after Phase 1 is complete and validated, add a campsite or village to represent overall project construction progress. Progress must come from explicit milestones or verified deliverables, not from activity counts or how long a character appears busy.
+## 第二阶段：营地／村庄——项目建设进度（暂不开发）
 
-Phase 2 is deliberately not part of the current implementation.
+第一阶段全部完成后，再用营地或村庄建设表现项目整体进度。进度只来自明确里程碑或已验证交付成果，不根据活跃时间、工具调用数或角色动作推算。
+
+人员状态与项目进度是两个不同的数据模型。第一阶段不添加伪进度条，也不提前实现营地。

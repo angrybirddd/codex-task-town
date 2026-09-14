@@ -1,0 +1,17 @@
+{
+  "name": "codex-task-town",
+  "version": "0.2.0",
+  "private": true,
+  "description": "A local-first pixel town for Codex Desktop tasks. No model calls, no runtime dependencies.",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "dev": "node --watch src/server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "hooks:preview": "node scripts/setup.mjs",
+    "hooks:install": "node scripts/setup.mjs --write",
+    "hooks:uninstall": "node scripts/setup.mjs --remove --write",
+    "probe": "node scripts/probe.mjs"
+  }
+}

@@ -1,0 +1,13 @@
+Node.js v22.16.0, Linux, 2026-09-14
+Command: npm test
+Below is the result footer from the local test run (not GitHub Actions).
+
+1..50
+# tests 50
+# suites 0
+# pass 50
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5465.270984
