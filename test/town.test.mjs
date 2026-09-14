@@ -68,9 +68,12 @@ test('tool return does not imply idle or completion', () => {
   const s = new TownStore(); s.ingest(event('PreToolUse')); s.ingest(event('PostToolUse', {}, now + 1));
   assert.equal(s.snapshot().tasks[0].state, 'thinking');
 });
-test('Stop is advisory review and can be followed by continued work', () => {
+test('Stop is advisory; ambiguous same-turn activity waits for a new turn', () => {
   const s = new TownStore(); s.ingest(event('Stop')); assert.equal(s.snapshot().tasks[0].state, 'review');
-  s.ingest(event('PreToolUse', {}, now + 1)); assert.equal(s.snapshot().tasks[0].state, 'testing');
+  s.ingest(event('PreToolUse', {}, now + 1)); assert.equal(s.snapshot().tasks[0].displayState, 'unknown');
+  s.ingest(event('UserPromptSubmit', { turn_id: 'confirmed-next' }, now + 2));
+  s.ingest(event('PreToolUse', { turn_id: 'confirmed-next' }, now + 3));
+  assert.equal(s.snapshot().tasks[0].displayState, 'testing');
 });
 test('closed session is not described as completed work', () => {
   const s = new TownStore(); s.ingest(event('SessionEnd')); assert.equal(s.snapshot().tasks[0].state, 'ended');
@@ -130,7 +133,7 @@ test('stdin watchdog bounds the recorder lifetime', async () => {
 });
 test('installer preserves other handlers and configuration metadata', () => {
   const original = { description: 'mine', hooks: { Stop: [{ matcher: 'x', hooks: [{ type: 'command', command: 'echo mine' }] }] } };
-  const command = 'node hook --codex-task-town --data-dir /tmp/town';
+  const command = 'node hook.mjs --codex-task-town --data-dir /tmp/town';
   const merged = mergeHooks(original, command);
   assert.equal(merged.description, 'mine'); assert.equal(merged.hooks.Stop[0].hooks[0].command, 'echo mine');
   assert.equal(original.hooks.Stop.length, 1); assert.deepEqual(mergeHooks(merged, command), merged);

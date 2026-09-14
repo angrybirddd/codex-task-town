@@ -1,11 +1,14 @@
 import { mkdir, readFile, writeFile, rename, lstat, unlink } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { EVENTS } from '../src/normalize.mjs';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MARKER = '--codex-task-town';
+// Recognize only our installed recorder command, not a casual mention of a marker.
+const owned = h => h?.type === 'command' && typeof h.command === 'string' &&
+  /(?:^|\s)--codex-task-town\s+--data-dir(?:\s|$)/.test(h.command) && /hook\.mjs(?:['"\s]|$)/.test(h.command);
 const quote = s => `'${s.replace(/'/g, `'"'"'`)}'`;
 
 export function mergeHooks(original, command, remove = false) {
@@ -19,11 +22,11 @@ export function mergeHooks(original, command, remove = false) {
     if (!Array.isArray(groups)) throw new Error(`Invalid hook groups: ${event}`);
     result.hooks[event] = groups.flatMap(group => {
       if (!Array.isArray(group.hooks)) throw new Error(`Invalid hook handlers: ${event}`);
-      const hooks = group.hooks.filter(h => !(h.type === 'command' && h.command?.includes(` ${MARKER} `)));
+      const hooks = group.hooks.filter(h => !owned(h));
       // Preserve existing empty groups as well as all unrelated handlers.
       return hooks.length || group.hooks.length === 0 ? [{ ...group, hooks }] : [];
     });
-    if (!remove) result.hooks[event].push({ hooks: [{ type: 'command', command, timeout: 1 }] });
+    if (!remove) result.hooks[event].push({ hooks: [{ type: 'command', command, timeout: 1, async: ['PreToolUse', 'PermissionRequest', 'PostToolUse'].includes(event) }] });
     if (!result.hooks[event].length) delete result.hooks[event];
   }
   return result;
@@ -67,8 +70,11 @@ export async function configure({ write = false, remove = false, filenames = fal
     }
     if (next !== old) {
       if (old) { backup = `${config}.backup-${Date.now()}`; await writeFile(backup, old, { flag: 'wx', mode: 0o600 }); }
-      await writeFile(`${config}.task-town.tmp`, next, { mode: 0o600 });
-      await rename(`${config}.task-town.tmp`, config);
+      const temporary = `${config}.task-town-${randomUUID()}.tmp`;
+      try {
+        await writeFile(temporary, next, { flag: 'wx', mode: 0o600 });
+        await rename(temporary, config);
+      } finally { await unlink(temporary).catch(() => {}); }
     }
   } finally { await unlink(lock).catch(() => {}); }
   return { config, backup, changed: next !== old, removed: remove };

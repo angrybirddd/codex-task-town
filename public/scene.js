@@ -139,16 +139,19 @@ export class TownScene {
     this.bg = document.createElement('canvas'); this.bg.width = WIDTH; this.bg.height = HEIGHT;
     background(this.bg.getContext('2d'));
     this.tick = () => {
-      clearTimeout(this.timer);
-      if (!this.paused && !document.hidden) { this.frame++; this.draw(); this.timer = setTimeout(this.tick, 100); }
+      clearTimeout(this.timer); this.timer = null;
+      if (!this.paused && !document.hidden && this.tasks.length) { this.frame++; this.draw(); this.timer = setTimeout(this.tick, 100); }
     };
     document.addEventListener('visibilitychange', this.tick);
     this.motion = matchMedia('(prefers-reduced-motion: reduce)');
     this.motion.addEventListener('change', event => { this.setPaused(event.matches); });
     this.tick();
   }
-  setPaused(value) { this.paused = value; this.tick(); this.draw(); }
-  update(tasks, selected, layout) { this.tasks = tasks; this.selected = selected; this.layout = layout; this.draw(); }
+  setPaused(value) { this.paused = value; this.tick(); this.draw(); this.onPauseChange?.(); }
+  update(tasks, selected, layout) { this.tasks = tasks; this.selected = selected; this.layout = layout; this.draw();
+    if (!tasks.length) { clearTimeout(this.timer); this.timer = null; }
+    else if (!this.timer) this.tick();
+  }
   draw() {
     const c = this.canvas.getContext('2d'); c.imageSmoothingEnabled = false; c.drawImage(this.bg, 0, 0);
     if (this.layout) for (const t of [...this.tasks].sort((a,b) => this.layout.get(a.id).y - this.layout.get(b.id).y)) {

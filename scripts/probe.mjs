@@ -10,7 +10,7 @@ const session_id = 'task-town-probe', taskId = hash(session_id), began = Date.no
 const dataDir = process.env.TOWN_DATA_DIR || join(homedir(), '.codex-task-town');
 try {
   for (const hook_event_name of ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop']) {
-    const child = spawnSync(process.execPath, [hook, '--data-dir', dataDir], { timeout: 2000, encoding: 'utf8',
+    const child = spawnSync(process.execPath, [hook, '--data-dir', dataDir, '--probe'], { timeout: 2000, encoding: 'utf8',
       input: JSON.stringify({ session_id, hook_event_name, cwd: 'probe', turn_id: `probe-${process.pid}-${began}`,
         tool_use_id: 'probe-call', prompt: '测试看板连接', tool_name: 'Bash',
         tool_input: { command: 'npm test' }, tool_response: { exit_code: 0 } }) });

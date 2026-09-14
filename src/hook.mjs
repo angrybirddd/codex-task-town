@@ -17,7 +17,7 @@ process.stdin.on('data', chunk => {
 process.stdin.on('end', async () => {
   try {
     const event = normalize(JSON.parse(Buffer.concat(chunks).toString('utf8')),
-      { now: started, filenames: process.argv.includes('--filenames') });
+      { now: started, filenames: process.argv.includes('--filenames'), synthetic: process.argv.includes('--probe') });
     chunks = [];
     if (event) {
       const directory = resolve(arg('--data-dir') || process.env.TOWN_DATA_DIR || join(homedir(), '.codex-task-town'));

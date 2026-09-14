@@ -19,7 +19,7 @@
       <div class="mode-box"><div class="mode-switch" aria-label="数据来源"><button id="live-mode" aria-pressed="true">实时小镇</button><button id="demo-mode" aria-pressed="false">逛逛演示</button></div><small id="mode-note">只读观察，不打扰 Codex 工作</small></div>
     </section>
     <section class="stats" aria-label="任务概况">
-      <div class="stat"><div><span>工作室居民</span><strong id="total">0</strong></div><small>独立任务会话</small></div>
+      <div class="stat"><div><span>工作室居民</span><strong id="total">0</strong></div><small>会话 / 已标识子任务</small></div>
       <div class="stat"><div><span>正在工作</span><strong id="working">0</strong></div><small>编码 / 阅读 / 测试</small></div>
       <div class="stat"><div><span>等待信号</span><strong id="waiting">0</strong></div><small>审批 / 未知 / 异常</small></div>
       <div class="stat token-stat"><div><span>看板额外模型调用</span><strong>0<em> 次</em></strong></div><small>让程序忙，让 Token 省</small></div>
@@ -34,7 +34,7 @@
       <dialog id="detail-dialog" class="detail-panel" aria-labelledby="detail-title">
         <div class="detail-heading"><h2>居民档案</h2><button data-close="detail-dialog" aria-label="关闭居民档案">×</button></div>
         <div class="identity"><canvas id="portrait" width="96" height="96" aria-hidden="true"></canvas><span class="role-label" id="detail-role">等待居民入住</span><h3 id="detail-title">选一位工作室居民</h3><code id="detail-id">每个会话，一个小人</code></div>
-        <div class="detail-status"><span class="label">此刻正在</span><strong id="detail-state">等待任务信号</strong><p id="detail-summary">点击居民，看看它在忙什么。</p></div>
+        <div class="detail-status"><span class="label">最近观察</span><strong id="detail-state">等待任务信号</strong><p id="detail-summary">点击居民，看看它在忙什么。</p></div>
         <div class="detail-meta"><div><span>最近活动</span><b id="detail-time">—</b></div><div><span>任务信号</span><b id="detail-freshness">尚未收到</b></div></div>
         <div class="timeline-heading"><h3>工作足迹</h3><span>最近 16 条</span></div><ol id="history" class="timeline"><li class="history-empty">新活动会留在这里。</li></ol>
         <button id="rename" class="text-button" disabled>给这位居民起个名字 ↗</button>

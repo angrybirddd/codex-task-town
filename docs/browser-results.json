@@ -1,4 +1,6 @@
 {
+  "version": "0.3.0",
+  "date": "2026-09-14",
   "browser": "Chromium",
   "fixture": "in-memory UI, mocked streaming fetch",
   "desktop": "1440x1100",
@@ -14,7 +16,12 @@
     "viewer header not URL",
     "streamed snapshot",
     "20-resident pagination",
-    "mobile resident list"
+    "mobile resident list",
+    "cross-room search stability",
+    "safe rename cancellation",
+    "invalid snapshot rejection",
+    "empty scene stops timer",
+    "dynamic reduced motion"
   ],
   "real_browser_server_e2e": false,
   "real_desktop_hooks_tested": false

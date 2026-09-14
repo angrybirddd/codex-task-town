@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual, randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 import { mkdir, readFile, open, rename, readdir, unlink, lstat } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -15,22 +15,22 @@ const FILES = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/ja
 const eq = (a, b) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 
 async function lockDirectory(dir) {
-  const path = join(dir, 'collector.lock'), owner = `${process.pid}\n`;
+  const path = join(dir, 'collector.lock');
+  const owner = JSON.stringify({ pid: process.pid, nonce: randomUUID() }) + '\n';
+  let file;
   try {
-    const lock = await open(path, 'wx', 0o600); await lock.writeFile(owner); await lock.close();
+    file = await open(path, 'wx', 0o600);
+    await file.writeFile(owner);
   } catch (error) {
+    if (file) await unlink(path).catch(() => {});
     if (error.code !== 'EEXIST') throw error;
-    // A dead process cannot still consume this queue. Never remove an active/ambiguous lock.
-    const old = await readFile(path, 'utf8'); const pid = Number(old.trim());
-    let dead = false;
-    if (Number.isSafeInteger(pid) && pid > 0) {
-      try { process.kill(pid, 0); } catch (e) { dead = e.code === 'ESRCH'; }
-    }
-    if (!dead) throw new Error(`Collector already running or lock needs inspection: ${path}`);
-    if (await readFile(path, 'utf8') !== old) throw new Error('Collector lock changed. Retry.');
-    await unlink(path); return lockDirectory(dir);
-  }
-  return async () => { if (await readFile(path, 'utf8').catch(() => '') === owner) await unlink(path).catch(() => {}); };
+    // No portable compare-and-unlink primitive: auto-reclaiming a stale PID file
+    // can delete a successor's lock. Fail closed instead of risking two writers.
+    throw new Error(`Collector lock exists: ${path}. Confirm all collectors are stopped before removing an abandoned lock.`);
+  } finally { if (file) await file.close(); }
+  return async () => {
+    if (await readFile(path, 'utf8').catch(() => '') === owner) await unlink(path).catch(() => {});
+  };
 }
 
 export async function startServer({ port = 4317, host = '127.0.0.1', token = '',
@@ -42,12 +42,18 @@ export async function startServer({ port = 4317, host = '127.0.0.1', token = '',
   dataDir = resolve(dataDir);
   const spool = join(dataDir, 'spool'), stateFile = join(dataDir, 'state.json');
   await mkdir(spool, { recursive: true, mode: 0o700 });
-  const unlock = await lockDirectory(dataDir);
   const store = new TownStore({ staleMs });
+  if (!(await lstat(spool)).isDirectory()) throw new Error('Spool must be a real directory, not a symlink');
+  const unlock = await lockDirectory(dataDir);
   try {
     const s = await lstat(stateFile);
-    if (s.isFile() && s.size < 8 * 1024 * 1024) store.restore(JSON.parse(await readFile(stateFile, 'utf8')));
-  } catch (e) { if (e.code !== 'ENOENT') console.warn('Saved state unavailable; replaying remaining queue.'); }
+    if (!s.isFile() || s.size > 32 * 1024 * 1024) throw new Error('Invalid checkpoint file');
+    const saved = JSON.parse(await readFile(stateFile, 'utf8'));
+    if (saved?.version !== 1 || !Array.isArray(saved.tasks)) throw new Error('Unsupported checkpoint schema');
+    store.restore(saved);
+  } catch (e) {
+    if (e.code !== 'ENOENT') { await unlock(); throw new Error('Checkpoint could not be loaded; preserved for inspection', { cause: e }); }
+  }
   const clients = new Set(); let busy = false, queueDepth = 0, rejected = 0, readError = false, writeError = false;
   let broadcastTimer, interval, heartbeat, closing = false;
   const snapshot = () => ({ ...store.snapshot(), queueDepth, rejectedEvents: rejected, collectorError: readError || writeError });
@@ -60,21 +66,26 @@ export async function startServer({ port = 4317, host = '127.0.0.1', token = '',
     }
   };
   async function save() {
-    let file;
+    let file, owned = false;
     try {
       // Exclusive temporary creation rejects symlinks and unexpected existing files.
-      file = await open(`${stateFile}.tmp`, 'wx', 0o600);
+      file = await open(`${stateFile}.tmp`, 'wx', 0o600); owned = true;
       await file.writeFile(store.serialize()); await file.sync(); await file.close(); file = null;
       await rename(`${stateFile}.tmp`, stateFile);
       writeError = false; return true;
     } catch { writeError = true; return false; }
-    finally { if (file) { await file.close().catch(() => {}); await unlink(`${stateFile}.tmp`).catch(() => {}); } }
+    finally {
+      if (file) await file.close().catch(() => {});
+      // Also clean after close succeeded but rename failed; never remove an unowned file.
+      if (owned) await unlink(`${stateFile}.tmp`).catch(() => {});
+    }
   }
   // Recover a normal temp file left by a crash; do not follow links or remove directories.
   try { if ((await lstat(`${stateFile}.tmp`)).isFile()) await unlink(`${stateFile}.tmp`); } catch {}
   async function poll() {
     if (busy || closing) return;
     busy = true;
+    let changed = false; const previousError = readError || writeError;
     try {
       const all = await readdir(spool);
       const names = all.filter(n => /^\d+-[a-f0-9-]+\.json$/.test(n)).sort();
@@ -83,7 +94,7 @@ export async function startServer({ port = 4317, host = '127.0.0.1', token = '',
         const path = join(spool, n), info = await lstat(path);
         if (info.isFile() && Date.now() - info.mtimeMs > 60000) await unlink(path);
       }
-      const consumed = []; let changed = false;
+      const consumed = [];
       for (const name of names.slice(0, 300)) {
         const path = join(spool, name);
         try {
@@ -104,12 +115,15 @@ export async function startServer({ port = 4317, host = '127.0.0.1', token = '',
           try { await unlink(path); queueDepth--; } catch { readError = true; }
         }
       }
-      if ((changed || writeError) && !broadcastTimer) broadcastTimer = setTimeout(() => {
-        broadcastTimer = null; broadcast();
-      }, 150);
     } catch { readError = true; }
-    finally { busy = false; }
+    finally {
+      busy = false;
+      if ((changed || writeError || previousError !== (readError || writeError)) && !broadcastTimer) {
+        broadcastTimer = setTimeout(() => { broadcastTimer = null; broadcast(); }, 150);
+      }
+    }
   }
+
   const server = http.createServer(async (req, res) => {
     const headers = { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
       'Cache-Control': 'no-store', 'X-Frame-Options': 'DENY',
@@ -127,12 +141,13 @@ export async function startServer({ port = 4317, host = '127.0.0.1', token = '',
       const hostname = url.hostname.replace(/^\[|\]$/g, '');
       if (!(['localhost', '127.0.0.1', '::1'].includes(hostname) || (!local && isIP(hostname)))) return send(403, { error: 'Invalid host' });
       if (req.headers.origin && req.headers.origin !== origin) return send(403, { error: 'Cross-origin requests are not allowed' });
+      if (req.headers['sec-fetch-site'] === 'cross-site') return send(403, { error: 'Cross-site requests are not allowed' });
       if (!['GET', 'HEAD'].includes(req.method)) return send(405, { error: 'Read-only dashboard' });
       if (url.pathname.startsWith('/api/')) {
-        const supplied = req.headers.authorization?.replace(/^Bearer /, '') || '';
+        const supplied = /^Bearer (.+)$/.exec(req.headers.authorization || '')?.[1] || '';
         if (token && !eq(supplied, token)) return send(401, { error: 'A viewer token is required' });
         if (url.pathname === '/api/snapshot') return send(200, snapshot());
-        if (url.pathname === '/api/health') return send(200, { ok: !readError && !writeError, version: '0.2.0', queueDepth, rejectedEvents: rejected, lastHookAt: store.lastHookAt });
+        if (url.pathname === '/api/health') return send(200, { ok: !readError && !writeError, version: '0.3.0', queueDepth, rejectedEvents: rejected, lastHookAt: store.lastHookAt });
         if (url.pathname === '/api/events' && req.method === 'GET') {
           if (clients.size >= 25) return send(503, { error: 'Viewer limit reached' });
           res.writeHead(200, { ...headers, 'Content-Type': 'text/event-stream', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });

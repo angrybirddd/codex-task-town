@@ -10,7 +10,8 @@ const scene = new TownScene($('town'), $('portrait'));
 let mode = new URLSearchParams(location.search).get('demo') === '1' ? 'demo' : 'live';
 let tasks = [], selectedId = '', page = 0, filter = 'all', connected = false, eventCount = 0, lastHookAt = 0;
 let events, generation = 0, demoTimer, serverOffset = 0, collectorError = false, connectionText = '正在连接';
-let lastSnapshotAt = 0, staleMs = 120000, aliases = {}, token = '';
+let lastSnapshotAt = 0, staleMs = 120000, aliases = {}, token = '', renameTargetId = '';
+let realEventCount = 0, lastRealHookAt = 0;
 try {
   const saved = JSON.parse(localStorage.getItem('task-town-aliases') || '{}');
   if (saved && typeof saved === 'object' && !Array.isArray(saved)) aliases = saved;
@@ -30,7 +31,7 @@ function age(at) {
 }
 function displayTask(t) {
   const alias = aliases[t.id] || {};
-  const oldSignal = [...ACTIVE, 'waiting', 'review'].includes(t.state) && Date.now() + serverOffset - t.lastAt > staleMs;
+  const oldSignal = [...ACTIVE, 'waiting', 'review', 'error'].includes(t.state) && Date.now() + serverOffset - t.lastAt > staleMs;
   const stale = mode === 'live' && (!connected || collectorError || t.stale || oldSignal);
   return { ...t, title: typeof alias.title === 'string' && alias.title ? alias.title.slice(0, 32) : t.title,
     role: Object.hasOwn(ROLES, alias.role) ? alias.role : t.role,
@@ -44,11 +45,17 @@ function filtered(all) {
     (filter === 'quiet' && ['idle', 'review', 'paused', 'ended'].includes(t.displayState))));
 }
 function render() {
-  const all = tasks.map(displayTask), visible = filtered(all), pages = Math.max(1, Math.ceil(visible.length / 8));
-  page = Math.min(page, pages - 1);
-  const group = visible.slice(page * 8, page * 8 + 8);
+  const all = tasks.map(displayTask), rooms = [];
+  for (let i = 0; i < all.length; i += 8) {
+    const matches = filtered(all.slice(i, i + 8));
+    if (matches.length) rooms.push(matches);
+  }
+  const pages = Math.max(1, rooms.length);
+  page = Math.max(0, Math.min(page, pages - 1));
+  const group = rooms[page] || [];
+  if (!all.some(t => t.id === renameTargetId)) { renameTargetId = ''; $('rename-dialog').close(); }
   if (!group.some(t => t.id === selectedId)) { selectedId = ''; $('detail-dialog').close(); }
-  layout.update(group, all);
+  layout.update(all, all);
   const selected = all.find(t => t.id === selectedId);
   $('total').textContent = all.length;
   $('working').textContent = all.filter(t => ACTIVE.includes(t.displayState)).length;
@@ -61,8 +68,8 @@ function render() {
   $('mode-note').textContent = mode === 'demo' ? '模拟居民，不是你的真实任务' : '只读观察，不打扰 Codex 工作';
   $('town-subtitle').textContent = mode === 'demo' ? '午后的工作室，各自忙碌，刚刚好。' : all.length ? `${all.length} 位居民已入住 · 点击居民查看详情` : '等待第一位居民到来';
   $('footer-status').textContent = mode === 'demo' ? '演示数据 · 与真实事件完全隔离' :
-    !connected ? '采集器未连接 · 仅供参考' : collectorError ? '采集器异常 · 状态待确认' : lastHookAt ? `采集器在线 · 最近事件 ${age(lastHookAt)}` : '采集器在线 · 尚无 Codex 事件';
-  $('event-count').textContent = mode === 'demo' ? 'DEMO · NO MODEL CALLS' : `${eventCount} EVENTS OBSERVED`;
+    !connected ? '采集器未连接 · 仅供参考' : collectorError ? '采集器异常 · 状态待确认' : lastRealHookAt ? `采集器在线 · 非探针事件 ${age(lastRealHookAt)}` : '采集器在线 · 尚无非探针事件';
+  $('event-count').textContent = mode === 'demo' ? 'DEMO · NO MODEL CALLS' : `${realEventCount} HOOK EVENTS · ${eventCount - realEventCount} PROBE / LEGACY`;
   $('page-label').textContent = `${page + 1} / ${pages}`;
   $('previous').disabled = page === 0; $('next').disabled = page >= pages - 1;
   $('empty').hidden = group.length > 0;
@@ -86,20 +93,22 @@ function render() {
     el.className = `resident state-${t.displayState}${selectedId === t.id ? ' selected' : ''}`;
     el.setAttribute('aria-pressed', String(selectedId === t.id));
     el.setAttribute('aria-label', `${t.title}，${LABELS[t.displayState]}，${t.summary}`);
-    const desired = t.stale ? `信号待确认 · 上次${LABELS[t.state] || '活动'}` : t.summary;
+    const provenance = t.synthetic ? '合成探针 · ' : t.legacy ? '历史记录 · ' : '';
+    const unknownNote = t.unknownReason === 'correlation-limit' ? '信号关联待确认' : '信号待确认';
+    const desired = provenance + (t.stale ? `${unknownNote} · 上次${LABELS[t.state] || '活动'}` : t.summary);
     const cache = speechCache.get(t.id);
     if (!cache || cache.state !== t.displayState || Date.now() - cache.at >= 2500 || ['waiting', 'unknown', 'error'].includes(t.displayState)) {
       if (cache?.text !== desired) speechCache.set(t.id, { text: desired, at: Date.now(), state: t.displayState });
     }
     el.querySelector('.speech').textContent = speechCache.get(t.id)?.text || desired;
     el.querySelector('.speech').title = desired;
-    el.querySelector('.name').textContent = t.title;
+    el.querySelector('.name').textContent = `${t.synthetic ? '[自检] ' : ''}${t.title}`;
     let row = listNodes.get(t.id);
     if (!row) {
       row = node('button', 'task-row'); row.append(node('strong'), node('span'), node('small'));
       row.onclick = el.onclick; listNodes.set(t.id, row); $('task-list').append(row);
     }
-    row.querySelector('strong').textContent = t.title;
+    row.querySelector('strong').textContent = `${t.synthetic ? '[自检] ' : ''}${t.title}`;
     row.querySelector('span').textContent = LABELS[t.displayState];
     row.querySelector('small').textContent = desired;
   });
@@ -113,9 +122,9 @@ function render() {
   $('detail-state').textContent = selected ? LABELS[selected.displayState] : '等待任务信号';
   $('detail-summary').textContent = selected ? (selected.stale ? `仅供参考，上次活动：${selected.summary}` : selected.summary) : '点击工位，看看它在忙什么。';
   $('detail-time').textContent = selected ? age(selected.lastAt) : '—';
-  $('detail-freshness').textContent = selected ? mode === 'demo' ? '模拟信号' : selected.stale ? '未知 / 信号较旧' : '已观察到事件' : '尚未收到';
+  $('detail-freshness').textContent = selected ? mode === 'demo' || selected.synthetic ? '模拟信号 / 非桌面接入证明' : selected.stale ? '未知 / 信号较旧' : '已观察到事件' : '尚未收到';
   $('rename').disabled = !selected;
-  const historyKey = `${selected?.id}:${selected?.history?.[0]?.at}:${selected?.history?.length}`;
+  const historyKey = `${selected?.id}:${JSON.stringify(selected?.history)}`;
   if ($('history').dataset.key !== historyKey) {
     $('history').dataset.key = historyKey; $('history').replaceChildren();
     for (const item of selected?.history || []) {
@@ -126,9 +135,20 @@ function render() {
   }
 }
 function receive(snapshot) {
-  if (!snapshot || !Array.isArray(snapshot.tasks) || !Number.isFinite(snapshot.serverTime)) throw new Error('Invalid snapshot');
+  const date = value => Number.isSafeInteger(value) && value > 0 && value <= 8640000000000000;
+  const short = (value, max) => typeof value === 'string' && value.length <= max;
+  const state = value => typeof value === 'string' && Object.hasOwn(LABELS, value);
+  if (!snapshot || !Array.isArray(snapshot.tasks) || snapshot.tasks.length > 200 || !date(snapshot.serverTime) ||
+      (snapshot.staleMs !== undefined && (!Number.isFinite(snapshot.staleMs) || snapshot.staleMs <= 0)) ||
+      snapshot.tasks.some(t => !t || !short(t.id, 80) || !t.id || !state(t.state) ||
+        (t.displayState !== undefined && !state(t.displayState)) || !short(t.role, 20) || !Object.hasOwn(ROLES, t.role) ||
+        !short(t.title, 128) || !short(t.summary, 100) || !date(t.lastAt) || !date(t.createdAt) ||
+        !Array.isArray(t.history) || t.history.length > 16 || t.history.some(h =>
+          !h || !date(h.at) || !state(h.state) || !short(h.summary, 100)))) throw new Error('Invalid snapshot');
+  if (new Set(snapshot.tasks.map(t => t.id)).size !== snapshot.tasks.length) throw new Error('Duplicate task identities');
   tasks = snapshot.tasks; serverOffset = snapshot.serverTime - Date.now(); eventCount = snapshot.eventCount;
   staleMs = snapshot.staleMs || 120000; lastSnapshotAt = Date.now();
+  realEventCount = snapshot.realEventCount || 0; lastRealHookAt = snapshot.lastRealHookAt || 0;
   lastHookAt = snapshot.lastHookAt; collectorError = snapshot.collectorError;
   connected = true; connectionText = '本地采集器在线'; render();
 }
@@ -140,7 +160,6 @@ async function connect() {
   try {
     // fetch streaming keeps viewer credentials in a header, not a logged URL query.
     const response = await fetch('/api/events', { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: controller.signal });
-    clearTimeout(handshake);
     if (request !== generation) { await response.body?.cancel(); return; }
     if (!response.ok) {
       connectionText = response.status === 401 ? '需要查看令牌' : '连接失败';
@@ -159,7 +178,7 @@ async function connect() {
           const frame = buffer.slice(0, end); buffer = buffer.slice(end + 2);
           if (!frame.includes('event: snapshot')) continue;
           const data = frame.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
-          if (request === generation && mode === 'live') receive(JSON.parse(data));
+          if (request === generation && mode === 'live') { receive(JSON.parse(data)); clearTimeout(handshake); }
         }
       }
     } finally { await reader.cancel().catch(() => {}); }
@@ -207,6 +226,7 @@ function syncAnimation() {
   $('animation').replaceChildren(document.createTextNode(scene.paused ? '▷ ' : 'Ⅱ '), node('span', '', scene.paused ? '播放动画' : '暂停动画'));
   $('animation').title = scene.paused ? '播放动画' : '暂停动画'; $('animation').setAttribute('aria-pressed', String(scene.paused));
 }
+scene.onPauseChange = syncAnimation;
 syncAnimation(); $('animation').onclick = () => { scene.setPaused(!scene.paused); syncAnimation(); };
 for (const button of document.querySelectorAll('[data-filter]')) button.onclick = () => {
   filter = button.dataset.filter; page = 0; document.querySelectorAll('[data-filter]').forEach(b => { b.classList.toggle('selected', b === button); b.setAttribute('aria-pressed', String(b === button)); }); render();
@@ -218,11 +238,13 @@ $('save-token').onclick = () => {
   $('guide-dialog').close(); setMode('live');
 };
 $('rename').onclick = () => {
-  $('nickname').value = aliases[selectedId]?.title || ''; $('role-select').value = aliases[selectedId]?.role || '';
+  renameTargetId = selectedId;
+  $('nickname').value = aliases[renameTargetId]?.title || ''; $('role-select').value = aliases[selectedId]?.role || '';
   $('rename-dialog').showModal(); $('nickname').focus();
 };
 $('save-name').onclick = () => {
-  aliases[selectedId] = { title: $('nickname').value.trim().slice(0, 32), role: $('role-select').value };
+  if (!renameTargetId || !tasks.some(t => t.id === renameTargetId)) { $('rename-dialog').close(); return; }
+  aliases[renameTargetId] = { title: $('nickname').value.trim().slice(0, 32), role: $('role-select').value };
   try { localStorage.setItem('task-town-aliases', JSON.stringify(aliases)); } catch {}
   $('rename-dialog').close(); render();
 };

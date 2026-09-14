@@ -84,6 +84,8 @@ async def main():
         await page.locator('#save-token').click()
         await page.wait_for_function("document.querySelector('#connection').textContent.includes('在线')")
         assert await page.locator('.resident').count()==0
+        frame=await page.evaluate('scene.frame');await page.wait_for_timeout(350)
+        assert frame==await page.evaluate('scene.frame'), 'empty town should not run an animation timer'
         requests=await page.evaluate('window.mockRequests')
         assert requests[-1]['url']=='/api/events'
         assert requests[-1]['headers']['Authorization']=='Bearer example-viewer-token'
@@ -95,7 +97,24 @@ async def main():
         assert await page.locator('#page-label').inner_text()=='1 / 3'
         await page.locator('#next').click();assert await page.locator('#page-label').inner_text()=='2 / 3'
         await page.locator('#next').click();assert await page.locator('.resident').count()==4
+        # Residents in different logical rooms must not be packed together on search.
+        await page.locator('#previous').click();await page.locator('#previous').click()
+        place0=await page.locator('.resident').first.get_attribute('style')
+        await page.locator('#search').fill('任务 1')
+        assert await page.locator('.resident').count()==1
+        await page.locator('#search').fill('任务 0')
+        assert await page.locator('.resident').first.get_attribute('style')==place0
+        await page.locator('#search').fill('')
+        await page.locator('.resident').first.click();await page.locator('#rename').click()
+        await page.evaluate('feedSnapshot({...mockSnapshot,tasks:mockSnapshot.tasks.slice(1)})')
+        assert not await page.locator('#rename-dialog').is_visible(), 'removed task must not leave a live rename target'
+        await page.evaluate('feedSnapshot({...mockSnapshot,tasks:[null]})')
+        await page.wait_for_function("document.querySelector('#connection').textContent.includes('中断')")
+        assert await page.locator('#total').inner_text()=='19', 'invalid frame must not replace last good data'
         await page.locator('#demo-mode').click()
+        await page.emulate_media(reduced_motion='reduce')
+        await page.wait_for_function("document.querySelector('#animation').getAttribute('aria-pressed')==='true'")
+        await page.emulate_media(reduced_motion='no-preference')
         await page.set_viewport_size({'width':390,'height':844});await page.wait_for_timeout(300)
         await page.screenshot(path=str(output/'task-town-studio-mobile.png'),full_page=True)
         assert await page.evaluate('document.documentElement.scrollWidth <= innerWidth')
@@ -106,7 +125,8 @@ async def main():
         print(json.dumps({'browser':'Chromium','fixture':'in-memory UI, mocked streaming fetch',
           'desktop':'1440x1100','mobile':'390x844','console_errors':errors,'mobile_no_page_overflow':True,
           'checks':['filters retain positions','search','modal keyboard close','nickname XSS escaping','paused canvas stable',
-                    'viewer header not URL','streamed snapshot','20-resident pagination','mobile resident list'],
+                    'viewer header not URL','streamed snapshot','20-resident pagination','mobile resident list','cross-room search stability','safe rename cancellation','invalid snapshot rejection',
+                    'empty scene stops timer','dynamic reduced motion'],
           'real_browser_server_e2e':False,'real_desktop_hooks_tested':False},ensure_ascii=False,indent=2))
         await browser.close()
 
