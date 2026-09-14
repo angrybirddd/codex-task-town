@@ -9,7 +9,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -54,14 +54,15 @@ async def main():
                     response = await page.goto(base, wait_until='domcontentloaded')
                     assert response.status == 200
                     assert "script-src 'self'" in response.headers['content-security-policy']
-                    await page.wait_for_function("document.querySelector('#connection').textContent==='需要查看令牌'")
+                    # Retry DOM assertions without string-eval polling: real CSP stays strict.
+                    await expect(page.locator('#connection')).to_have_text('需要查看令牌')
                     await page.locator('#guide').click()
                     await page.locator('#viewer-token').fill(token)
                     await page.locator('#save-token').click()
-                    await page.wait_for_function("document.querySelector('#connection').textContent.includes('在线')")
+                    await expect(page.locator('#connection')).to_contain_text('在线')
                     assert await page.locator('.resident').count() == 0
                     await run('node', 'scripts/probe.mjs')
-                    await page.wait_for_function("document.querySelector('.name')?.textContent.includes('[自检]')")
+                    await expect(page.locator('.name').first).to_contain_text('[自检]')
                     assert '尚无非探针事件' in await page.locator('#footer-status').inner_text()
                     await emit('UserPromptSubmit', prompt='前端 design-do-not-expose-this-prompt')
                     await emit('PreToolUse', tool_name='apply_patch', tool_use_id='edit-a',
@@ -73,7 +74,7 @@ async def main():
                     await page.wait_for_selector('.state-waiting')
                     await emit('PostToolUse', session='second-task', tool_name='Bash', tool_use_id='test-a',
                         tool_input={'command':'npm test'}, tool_response={'exit_code':0})
-                    await page.wait_for_function("!document.querySelector('.state-waiting')")
+                    await expect(page.locator('.state-waiting')).to_have_count(0)
                     snapshot = await page.evaluate("async()=>await (await fetch('/api/snapshot',{headers:{Authorization:'Bearer '+sessionStorage.getItem('task-town-token')}})).json()")
                     serialized = json.dumps(snapshot)
                     assert 'design-do-not-expose' not in serialized
@@ -82,10 +83,10 @@ async def main():
                     assert any(t['synthetic'] for t in snapshot['tasks'])
                     # This wait is intentional: live HTTP remains open, but a task's
                     # evidence must expire WITHOUT waiting for the next SSE heartbeat.
-                    await page.wait_for_function("document.querySelectorAll('.state-coding,.state-thinking').length===0", timeout=7000)
+                    await expect(page.locator('.state-coding,.state-thinking')).to_have_count(0, timeout=7000)
                     await page.set_viewport_size({'width':390,'height':844})
                     assert await page.evaluate('document.documentElement.scrollWidth<=innerWidth')
-                    assert await page.locator('.task-row').count() == 3
+                    await expect(page.locator('.task-row')).to_have_count(3)
                     assert not errors, errors
                     print(json.dumps({'real_browser_server_e2e':True, 'installed_recorder_executed':True,
                         'real_desktop_hooks_tested':False, 'console_errors':errors,
