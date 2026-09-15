@@ -64,7 +64,7 @@ async def main():
         assert await page.locator('.resident').nth(2).get_attribute('style')==initial
         await page.get_by_role('button',name='等待 / 未知',exact=True).click()
         assert await page.locator('.resident').count()==1
-        await page.get_by_role('button',name='全部',exact=True).click()
+        await page.get_by_role('button',name='当前',exact=True).click()
         await page.locator('#search').fill('后台');assert await page.locator('.resident').count()==1
         await page.locator('#search').fill('')
         await page.locator('.resident').first.click()
@@ -111,6 +111,89 @@ async def main():
         await page.evaluate('feedSnapshot({...mockSnapshot,tasks:[null]})')
         await page.wait_for_function("document.querySelector('#connection').textContent.includes('中断')")
         assert await page.locator('#total').inner_text()=='19', 'invalid frame must not replace last good data'
+        # Four synthetic fixture workers span three rooms; one probe must not inflate the count.
+        await page.evaluate('mockSnapshot={tasks:[],serverTime:Date.now(),eventCount:0,lastHookAt:0,staleMs:120000}')
+        await page.locator('#live-mode').click()
+        await page.wait_for_function("document.querySelector('#connection').textContent.includes('在线')")
+        await page.evaluate("""feedSnapshot({serverTime:Date.now(),eventCount:17,lastHookAt:Date.now(),staleMs:120000,tasks:
+          Array.from({length:17},(_,i)=>({id:'roster-'+i,
+          role:({0:'backend',5:'frontend',10:'testing',16:'docs'})[i]||'general',
+          title:({0:'修复登录权限',5:'优化侧边导航',10:'回归权限测试',16:'整理接口文档'})[i]||'参考任务 '+i,
+          titleSource:'shared',projectLabel:'青山后台',
+          state:({0:'coding',5:'coding',10:'testing',16:'reading'})[i]||'review',
+          displayState:({0:'coding',5:'coding',10:'testing',16:'reading'})[i]||'review',
+          summary:({0:'正在修改鉴权逻辑',5:'正在调整导航组件',10:'正在运行权限测试',16:'正在核对接口说明'})[i]||'本轮收尾',
+          createdAt:Date.now()+i,lastAt:Date.now(),history:[]})).concat([
+          {id:'probe-only',role:'testing',title:'探针',state:'testing',displayState:'testing',synthetic:true,
+          summary:'正在运行测试',createdAt:Date.now(),lastAt:Date.now(),history:[]}])})""")
+        await page.wait_for_function("document.querySelector('#working').textContent==='4'")
+        assert await page.locator('.task-card.category-active').count()==4
+        assert await page.locator('.task-card.category-reference').count()==0
+        assert await page.locator('#reference-count').inner_text()=='1'
+        assert await page.locator('#total').inner_text()=='17'
+        assert await page.locator('#task-list').is_visible(), 'worklist must be visible on desktop'
+        # No click, hover, filter or motion required: all four active cards are above the fold.
+        await page.locator('#animation').click()
+        await page.evaluate('window.scrollTo(0,0)')
+        await page.screenshot(path=str(output/'four-before-check.png'),full_page=True)
+        boxes = await page.locator('.task-card.category-active').evaluate_all('(xs)=>xs.map(x=>{let r=x.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:innerHeight}})')
+        assert all(b['top'] >= 0 and b['bottom'] <= b['height'] for b in boxes), boxes
+        assert await page.locator('.task-card.category-active .roster-action').evaluate_all('(xs)=>xs.every(x=>x.textContent&&x.scrollHeight<=x.clientHeight+1)')
+        await page.locator('#animation').click()
+        await page.locator('#search').fill('no-match')
+        await page.locator('[data-scope=active]').click()
+        assert await page.locator('#search').input_value()==''
+        assert await page.locator('.task-row').count()==4
+        assert await page.locator('#task-list').evaluate('(el)=>{const cards=el.querySelectorAll(".task-card");return cards[3].getBoundingClientRect().bottom<=el.getBoundingClientRect().bottom}'), 'all four workers should fit in the desktop list'
+        stamp=await page.add_style_tag(content='body::after{content:"界面回归测试示例 · 非线上真实任务";position:fixed;bottom:10px;right:20px;background:#fff7df;border:1px solid #cdb882;padding:10px;z-index:9999;font-size:12px;color:#735322}')
+        await page.screenshot(path=str(output/'task-town-four-workers.png'),full_page=True)
+        await stamp.evaluate('(el)=>el.remove()')
+        assert await page.locator('#page-label').inner_text()=='1 / 3'
+        last=page.locator('.task-row').last
+        await last.click()
+        assert not await page.locator('#detail-dialog').is_visible(), 'locating must not cover the scene'
+        assert await page.locator('#page-label').inner_text()=='3 / 3'
+        assert await page.locator('.resident.selected .resident-number').inner_text()=='17'
+        assert await page.locator('.resident.selected .resident-state').inner_text()=='● 阅读中'
+        assert await page.locator('.task-card.selected .roster-number').inner_text()=='17'
+        await last.focus();await page.wait_for_timeout(1100)
+        assert await last.evaluate('(el)=>document.activeElement===el'), 'age updates must preserve keyboard focus'
+        await page.locator('.task-details').last.click()
+        assert await page.locator('#detail-title').inner_text()=='整理接口文档'
+        await page.keyboard.press('Escape')
+        await page.locator('[data-scope=all]').click()
+        await page.locator('#search').fill('青山后台')
+        assert await page.locator('.task-row').count()==17
+        await page.locator('#search').fill('')
+        await page.locator('[data-scope=active]').click()
+        # Force stale timestamps through the real presentation code, not just CSS.
+        await page.evaluate('feedSnapshot({...mockSnapshot,serverTime:Date.now(),tasks:mockSnapshot.tasks.map(t=>({...t,lastAt:Date.now()-130000}))})')
+        await page.wait_for_function("document.querySelector('#working').textContent==='0'")
+        assert await page.locator('.task-row').count()==0
+        await page.locator('[data-scope=waiting]').click()
+        assert await page.locator('.task-row').count()==17
+        assert '上次：' in await page.locator('.roster-action').first.inner_text()
+        await page.locator('[data-scope=all]').click()
+        await page.evaluate('feedSnapshot({...mockSnapshot,serverTime:Date.now(),tasks:mockSnapshot.tasks.map(t=>({...t,lastAt:Date.now()-1800001}))})')
+        await page.wait_for_function("document.querySelector('#total').textContent==='0'")
+        assert await page.locator('.task-row').count()==0
+        assert await page.locator('#history-count').inner_text()=='17'
+        await page.locator('[data-filter=archived]').click()
+        assert await page.locator('.task-row').count()==17
+        assert '上次：' in await page.locator('.roster-action').first.inner_text()
+        await page.locator('[data-filter=all]').click()
+        await page.evaluate("""feedSnapshot({serverTime:Date.now(),eventCount:9,lastHookAt:Date.now(),tasks:[
+          {id:'parent',role:'backend',title:'一个主任务',state:'coding',summary:'正在修改代码',lastAt:Date.now(),createdAt:Date.now(),history:[]},
+          {id:'child',parentTaskId:'parent',role:'testing',title:'子任务',state:'testing',summary:'正在测试',lastAt:Date.now(),createdAt:Date.now(),history:[]},
+          {id:'closed',role:'docs',title:'已关闭任务',state:'ended',summary:'会话关闭',lastAt:Date.now(),createdAt:Date.now(),history:[]}]})""")
+        await page.wait_for_function("document.querySelector('#total').textContent==='1'")
+        assert await page.locator('#working').inner_text()=='1'
+        assert await page.locator('#children-count').inner_text()=='1'
+        assert await page.locator('.task-row').count()==2
+        assert '属于 一个主任务' in await page.locator('.task-card.category-children .roster-project').inner_text()
+        await page.evaluate("feedSnapshot({...mockSnapshot,tasks:mockSnapshot.tasks.map(t=>t.id==='parent'?{...t,state:'ended'}:t)})")
+        await page.wait_for_function("document.querySelector('#total').textContent==='0'")
+        assert await page.locator('.task-row').count()==1
         await page.locator('#demo-mode').click()
         await page.emulate_media(reduced_motion='reduce')
         await page.wait_for_function("document.querySelector('#animation').getAttribute('aria-pressed')==='true'")
@@ -119,14 +202,15 @@ async def main():
         await page.screenshot(path=str(output/'task-town-studio-mobile.png'),full_page=True)
         assert await page.evaluate('document.documentElement.scrollWidth <= innerWidth')
         assert await page.locator('.task-row').count()==8
-        await page.locator('.task-row').last.click();assert await page.locator('#detail-dialog').is_visible()
+        await page.locator('.task-details').last.click();assert await page.locator('#detail-dialog').is_visible()
         await page.keyboard.press('Escape')
         assert not errors, errors
         print(json.dumps({'browser':'Chromium','fixture':'in-memory UI, mocked streaming fetch',
           'desktop':'1440x1100','mobile':'390x844','console_errors':errors,'mobile_no_page_overflow':True,
           'checks':['filters retain positions','search','modal keyboard close','nickname XSS escaping','paused canvas stable',
                     'viewer header not URL','streamed snapshot','20-resident pagination','mobile resident list','cross-room search stability','safe rename cancellation','invalid snapshot rejection',
-                    'empty scene stops timer','dynamic reduced motion'],
+                    'empty scene stops timer','dynamic reduced motion','cross-room four-worker count','probe excluded from work count',
+                    'desktop worklist visible','counter clears search','list locates numbered resident','shared name and project search','stable keyboard focus','worklist evidence expiry','four active cards above fold without interaction','history leaves current scope','children separate from main count','parent label visible','close decreases current count'],
           'real_browser_server_e2e':False,'real_desktop_hooks_tested':False},ensure_ascii=False,indent=2))
         await browser.close()
 

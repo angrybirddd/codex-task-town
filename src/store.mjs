@@ -1,13 +1,15 @@
 import { ROLES, STATES, validEvent, isId } from './normalize.mjs';
+import { DEFAULT_CURRENT_WINDOW_MS, validateWindow, scopeTasks, rosterCounts, retentionRank } from '../public/lifecycle.js';
 const ACTIVE = new Set(['thinking', 'coding', 'reading', 'testing', 'running', 'waiting', 'review', 'error']);
 const ID = { test: isId };
 const TOOL = new Set(['PreToolUse', 'PermissionRequest', 'PostToolUse']);
 
 export class TownStore {
-  constructor({ staleMs = 120000, maxTasks = 200 } = {}) {
+  constructor({ staleMs = 120000, maxTasks = 200, currentWindowMs = Math.max(DEFAULT_CURRENT_WINDOW_MS, staleMs) } = {}) {
     if (!Number.isFinite(staleMs) || staleMs <= 0 || !Number.isInteger(maxTasks) || maxTasks < 1 || maxTasks > 200)
       throw new Error('Invalid store limits');
     this.staleMs = staleMs; this.maxTasks = maxTasks;
+    this.currentWindowMs = validateWindow(currentWindowMs, staleMs);
     this.tasks = new Map(); this.seen = new Set(); this.count = 0; this.lastHookAt = 0; this.realCount = 0; this.lastRealHookAt = 0;
   }
   ingest(e) {
@@ -18,14 +20,20 @@ export class TownStore {
     if (e.synthetic === false) { this.realCount++; this.lastRealHookAt = Math.max(this.lastRealHookAt, e.at); }
     let t = this.tasks.get(e.taskId);
     if (!t) {
-      if (this.tasks.size >= this.maxTasks) {
-        const oldest = [...this.tasks.values()].sort((a, b) => a.lastAt - b.lastAt)[0];
-        this.tasks.delete(oldest.id);
-      }
       t = { id: e.taskId, parentTaskId: e.parentTaskId || '', projectId: e.projectId, role: e.role, synthetic: e.synthetic === true, legacy: e.synthetic === undefined,
         title: `${ROLES[e.role]} · ${e.taskId.slice(0, 4)}`, createdAt: e.at, lastAt: 0,
         state: 'unknown', summary: '等待任务信号', turnId: '', pending: {}, approvals: {},
         completed: [], results: [], closedTurns: [], boundaryAt: 0, fenced: false, uncertain: false, history: [], restored: false };
+      if (this.tasks.size >= this.maxTasks) {
+        const now = Date.now();
+        const incoming = { ...t, lastAt: e.at, state: e.type === 'SessionEnd' ? 'ended' : e.type === 'SubagentStop' ? 'review' : 'unknown' };
+        const victim = scopeTasks([...this.tasks.values(), incoming], { now, currentWindowMs: this.currentWindowMs }).sort((a, b) =>
+          retentionRank(a, now, this.currentWindowMs) - retentionRank(b, now, this.currentWindowMs) || a.lastAt - b.lastAt)[0];
+        // An old replay/probe must not displace current work. The bounded event
+        // receipt is still persisted so failed acknowledgements can be retried.
+        if (victim.id === incoming.id) return true;
+        this.tasks.delete(victim.id);
+      }
       this.tasks.set(t.id, t);
     }
     // A result from a previous turn must never revive the current one.
@@ -132,13 +140,15 @@ export class TownStore {
     return true;
   }
   snapshot(now = Date.now()) {
-    return { version: 1, serverTime: now, staleMs: this.staleMs, lastHookAt: this.lastHookAt, eventCount: this.count, realEventCount: this.realCount, lastRealHookAt: this.lastRealHookAt,
-      tasks: [...this.tasks.values()].sort((a, b) => a.createdAt - b.createdAt).map(t => {
-        const stale = t.uncertain || t.restored || (ACTIVE.has(t.state) && now - t.lastAt > this.staleMs);
-        const { pending, approvals, completed, results, closedTurns, boundaryAt, fenced, uncertain, restored, ...safe } = t;
-        return { ...safe, stale, unknownReason: t.uncertain ? 'correlation-limit' : t.restored ? 'restart' : stale ? 'stale' : '', displayState: stale ? 'unknown' : t.state,
-          pendingTools: Object.keys(pending).length, pendingApprovals: Object.keys(approvals).length };
-      }) };
+    const tasks = scopeTasks([...this.tasks.values()].sort((a, b) => a.createdAt - b.createdAt).map(t => {
+      const stale = t.uncertain || t.restored || (ACTIVE.has(t.state) && now - t.lastAt > this.staleMs);
+      const { pending, approvals, completed, results, closedTurns, boundaryAt, fenced, uncertain, restored, ...safe } = t;
+      return { ...safe, stale, unknownReason: t.uncertain ? 'correlation-limit' : t.restored ? 'restart' : stale ? 'stale' : '',
+        displayState: stale ? 'unknown' : t.state, pendingTools: Object.keys(pending).length, pendingApprovals: Object.keys(approvals).length };
+    }), { now, currentWindowMs: this.currentWindowMs });
+    return { version: 1, serverTime: now, staleMs: this.staleMs, currentWindowMs: this.currentWindowMs,
+      lastHookAt: this.lastHookAt, eventCount: this.count, realEventCount: this.realCount, lastRealHookAt: this.lastRealHookAt,
+      roster: rosterCounts(tasks), tasks };
   }
   serialize() {
     return JSON.stringify({ version: 1, count: this.count, lastHookAt: this.lastHookAt, realCount: this.realCount, lastRealHookAt: this.lastRealHookAt,

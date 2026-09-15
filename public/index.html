@@ -15,36 +15,45 @@
   </header>
   <main>
     <section class="intro">
-      <div><div class="eyebrow"><span class="tiny-leaf"></span> A LITTLE TOWN, A LOT GETTING DONE.</div><h1>让工作，被看见<span>。</span></h1><p>一间共享工作室，各自忙碌，也彼此陪伴。</p></div>
+      <div><div class="eyebrow"><span class="tiny-leaf"></span> A LITTLE TOWN, A LOT GETTING DONE.</div><h1>让工作，被看见<span>。</span></h1><p>先看清谁在做什么，再逛逛他们的工作室。</p></div>
       <div class="mode-box"><div class="mode-switch" aria-label="数据来源"><button id="live-mode" aria-pressed="true">实时小镇</button><button id="demo-mode" aria-pressed="false">逛逛演示</button></div><small id="mode-note">只读观察，不打扰 Codex 工作</small></div>
     </section>
     <section class="stats" aria-label="任务概况">
-      <div class="stat"><div><span>工作室居民</span><strong id="total">0</strong></div><small>会话 / 已标识子任务</small></div>
-      <div class="stat"><div><span>正在工作</span><strong id="working">0</strong></div><small>编码 / 阅读 / 测试</small></div>
-      <div class="stat"><div><span>等待信号</span><strong id="waiting">0</strong></div><small>审批 / 未知 / 异常</small></div>
+      <button class="stat" data-scope="all" aria-pressed="true"><div><span>近期主任务</span><strong id="total">0</strong></div><small>不含子任务与历史</small></button>
+      <button class="stat" data-scope="active" aria-pressed="false"><div><span>主任务工作中</span><strong id="working">0</strong></div><small>对应下方常驻任务名单</small></button>
+      <button class="stat" data-scope="waiting" aria-pressed="false"><div><span>需留意</span><strong id="waiting">0</strong></div><small>主任务 · 审批 / 未知 / 异常</small></button>
       <div class="stat token-stat"><div><span>看板额外模型调用</span><strong>0<em> 次</em></strong></div><small>让程序忙，让 Token 省</small></div>
     </section>
+    <p id="scope-note" class="scope-note"></p>
     <div class="workspace">
       <section class="town-panel" aria-labelledby="town-title">
         <div class="panel-header"><div><h2 id="town-title">今天的工作室 <span id="town-badge">LIVE</span></h2><p id="town-subtitle">等待第一位居民到来</p></div><button class="icon-button" id="animation" aria-pressed="false" title="暂停动画">Ⅱ <span>暂停动画</span></button></div>
-        <div class="toolbar"><div class="filters" aria-label="筛选任务"><button data-filter="all" class="selected">全部</button><button data-filter="active">工作中</button><button data-filter="waiting">等待 / 未知</button><button data-filter="quiet">休息 / 收尾</button></div><label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="寻找任务…" aria-label="搜索任务"></label></div>
-        <div class="stage-scroll"><div class="stage" id="stage"><canvas id="town" width="1200" height="800" aria-hidden="true"></canvas><div id="residents" aria-label="任务居民"></div><div class="empty" id="empty"><span class="empty-mark">⌂</span><h3>工位已经准备好了</h3><p>连接 Codex Hooks，让你的任务住进来。<br>也可以先逛逛演示小镇。</p><button id="empty-demo" class="primary">看看演示小镇 →</button></div></div></div><p class="mobile-hint">左右滑动逛工作室 · 下方列表查看全部居民</p><div id="task-list" class="task-list" aria-label="任务列表"></div>
+        <div class="toolbar"><div class="filters" aria-label="筛选任务"><button data-filter="all" class="selected">当前</button><button data-filter="active">工作中</button><button data-filter="waiting">等待 / 未知</button><button data-filter="quiet">收尾 / 待命</button><button data-filter="children">子任务 <b id="children-count">0</b></button><button data-filter="archived">历史 <b id="history-count">0</b></button><button data-filter="reference">自检 / 旧版 <b id="reference-count">0</b></button></div><label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="搜任务、项目或当前动作…" aria-label="搜索任务"></label></div>
+        <div class="studio-content">
+          <aside class="worklist-panel" aria-labelledby="worklist-title">
+            <div class="worklist-heading"><div class="eyebrow">WHO IS DOING WHAT</div><h3 id="worklist-title">谁在做什么</h3><p id="worklist-summary" role="status">等待工作信号</p></div>
+            <p class="worklist-help">任务名、状态、当前活动常驻显示 · 无需点击</p>
+            <div id="task-list" class="task-list" aria-label="当前主任务与子任务的工作名单"></div>
+            <p id="worklist-scroll-hint" class="worklist-help" hidden>↓ 下方还有任务，页面可向下滚动</p>
+            <p id="worklist-empty" class="worklist-empty" hidden>没有匹配任务。</p>
+          </aside>
+          <div class="scene-column"><div class="scene-context"><strong id="room-context">第 1 间工作室</strong><span id="scene-count">场景可见 0 个任务</span></div><div class="stage-scroll"><div class="stage" id="stage"><canvas id="town" width="1200" height="800" aria-hidden="true"></canvas><div id="residents" aria-label="任务居民"></div><div class="empty" id="empty"><span class="empty-mark">⌂</span><h3>工位已经准备好了</h3><p>连接 Codex Hooks，让你的任务住进来。<br>也可以先逛逛演示小镇。</p><button id="empty-demo" class="primary">看看演示小镇 →</button></div></div></div><p class="mobile-hint">左右滑动看场景 · 名单编号对应人物编号</p><p class="scene-legend"><span>● 工作信号</span><span>! 等待 / 异常</span><span>◇ 未确认 / 收尾</span><span>动画不代表实时执行保证</span></p><p id="focus-note" class="focus-note" role="status"></p></div></div>
         <div class="town-footer"><span><i class="dot"></i><span id="footer-status">等待本地采集器</span></span><div class="pager"><button id="previous" aria-label="上一页">←</button><span id="page-label">1 / 1</span><button id="next" aria-label="下一页">→</button></div><span class="quiet-note">小人自己动，任务安心做。</span></div>
       </section>
       <dialog id="detail-dialog" class="detail-panel" aria-labelledby="detail-title">
         <div class="detail-heading"><h2>居民档案</h2><button data-close="detail-dialog" aria-label="关闭居民档案">×</button></div>
-        <div class="identity"><canvas id="portrait" width="96" height="96" aria-hidden="true"></canvas><span class="role-label" id="detail-role">等待居民入住</span><h3 id="detail-title">选一位工作室居民</h3><code id="detail-id">每个会话，一个小人</code></div>
-        <div class="detail-status"><span class="label">最近观察</span><strong id="detail-state">等待任务信号</strong><p id="detail-summary">点击居民，看看它在忙什么。</p></div>
-        <div class="detail-meta"><div><span>最近活动</span><b id="detail-time">—</b></div><div><span>任务信号</span><b id="detail-freshness">尚未收到</b></div></div>
+        <div class="identity"><canvas id="portrait" width="96" height="96" aria-hidden="true"></canvas><span class="role-label" id="detail-role">等待居民入住</span><h3 id="detail-title">选一位工作室居民</h3><code id="detail-id">每个会话，一个小人</code><code id="detail-project"></code></div>
+        <div class="detail-status"><span class="label">最近观察</span><strong id="detail-state">等待任务信号</strong><p id="detail-summary">这里仅补充历史；当前工作直接显示在名单中。</p></div>
+        <p id="detail-naming" class="naming-note"></p><div class="detail-meta"><div><span>最近活动</span><b id="detail-time">—</b></div><div><span>任务信号</span><b id="detail-freshness">尚未收到</b></div></div>
         <div class="timeline-heading"><h3>工作足迹</h3><span>最近 16 条</span></div><ol id="history" class="timeline"><li class="history-empty">新活动会留在这里。</li></ol>
-        <button id="rename" class="text-button" disabled>给这位居民起个名字 ↗</button>
+        <button id="rename" class="text-button" disabled>设置任务名称（此浏览器） ↗</button>
       </dialog>
     </div>
     <section class="bottom-note"><span><span class="note-icon">✧</span><strong>一个安静的旁观者。</strong> Hooks 记录事件，浏览器播放动画。不保存原始对话，不替你批准命令。</span><span id="event-count">0 EVENTS OBSERVED</span></section>
   </main>
   <dialog id="guide-dialog"><button class="dialog-close" data-close="guide-dialog" aria-label="关闭">×</button><div class="eyebrow">WELCOME TO TASK TOWN</div><h2>把 Codex 接进小镇</h2><p>在项目目录运行以下命令。安装前可以预览修改，已有 Hooks 会保留并备份。</p><pre>npm run hooks:preview
 npm run hooks:install
-npm start</pre><p>回到 Codex 桌面应用，审核并信任新增的 Hooks，再开启一个新任务或新回合。旧任务要等到新的事件触发才会出现。</p><div class="notice">已连接网页 ≠ Codex 已接入。看到真实任务事件，才说明链路有数据。没有新日志不会被判定为休息。</div><h3>自检</h3><pre>npm run probe</pre><p>这会发送合成测试事件，只验证采集链路，不代表已验证桌面应用的 Hook 信任。</p><h3>局域网访问</h3><p>服务默认只允许本机。共享时需显式设置监听地址和至少 24 字符的查看令牌；不要直接暴露到公网。详细步骤见 README。</p><label class="token-label">查看令牌（仅共享模式需要）<input id="viewer-token" type="password" autocomplete="off" placeholder="粘贴查看令牌"></label><button id="save-token" class="primary">保存令牌并连接</button></dialog>
-  <dialog id="rename-dialog"><button class="dialog-close" data-close="rename-dialog" aria-label="关闭">×</button><h2>给居民一个名字</h2><p>昵称只保存在当前浏览器，不会回传给 Codex 或其他查看者。</p><label class="token-label">任务昵称<input id="nickname" maxlength="32" placeholder="例如：重构后台导航"></label><label class="token-label">职业装扮<select id="role-select"><option value="">自动识别</option><option value="frontend">前端工程师</option><option value="backend">后端工程师</option><option value="testing">测试工程师</option><option value="docs">文档工程师</option><option value="ops">运维工程师</option><option value="general">工程师</option></select></label><button id="save-name" class="primary">保存昵称</button></dialog>
+npm start</pre><p>回到 Codex 桌面应用，审核并信任新增的 Hooks，再开启一个新任务或回合。旧任务要等到新的事件触发才会出现。</p><div class="notice">已连接网页 ≠ Codex 已接入。看到真实任务事件，才说明链路有数据。没有新日志不会被判定为休息。</div><h3>让所有查看者看到任务名称</h3><p>管理员可在看板服务的数据目录创建 <code>labels.json</code>，用居民档案中的完整任务 ID、项目 ID 映射为允许公开的名称。重启服务后生效；格式见 README 的“共享任务名称”。不会读取原始提示词，也不增加模型调用。</p><h3>自检</h3><pre>npm run probe</pre><p>这会发送合成测试事件，只验证采集链路，不代表已验证桌面应用的 Hook 信任。</p><h3>局域网访问</h3><p>服务默认只允许本机。共享时需显式设置监听地址和至少 24 字符的查看令牌；不要直接暴露到公网。详细步骤见 README。</p><label class="token-label">查看令牌（仅共享模式需要）<input id="viewer-token" type="password" autocomplete="off" placeholder="粘贴查看令牌"></label><button id="save-token" class="primary">保存令牌并连接</button></dialog>
+  <dialog id="rename-dialog"><button class="dialog-close" data-close="rename-dialog" aria-label="关闭">×</button><h2>让任务容易辨认</h2><p>填写简短明确的任务目标，例如“修复登录权限”。这里的名称仅在此浏览器生效；多人共享名称请配置服务端 labels.json，详见接入指南。</p><label class="token-label">任务名称<input id="nickname" maxlength="64" placeholder="例如：重构后台导航"></label><label class="token-label">职业装扮<select id="role-select"><option value="">自动识别</option><option value="frontend">前端工程师</option><option value="backend">后端工程师</option><option value="testing">测试工程师</option><option value="docs">文档工程师</option><option value="ops">运维工程师</option><option value="general">工程师</option></select></label><button id="save-name" class="primary">保存昵称</button></dialog>
 </body>
 </html>
